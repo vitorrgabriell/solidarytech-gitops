@@ -1,0 +1,87 @@
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: solidarytech-base
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/vitorrgabriell/solidarytech-gitops.git
+    targetRevision: HEAD
+    path: base
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: solidarytech
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ngo-service
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/vitorrgabriell/solidarytech-gitops.git
+    targetRevision: HEAD
+    path: apps/ngo-service
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: solidarytech
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: donation-service
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/vitorrgabriell/solidarytech-gitops.git
+    targetRevision: HEAD
+    path: apps/donation-service
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: solidarytech
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: volunteer-service
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/vitorrgabriell/solidarytech-gitops.git
+    targetRevision: HEAD
+    path: apps/volunteer-service
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: solidarytech
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

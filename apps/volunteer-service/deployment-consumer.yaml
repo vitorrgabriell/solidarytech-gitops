@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: volunteer-consumer
+  namespace: solidarytech
+  labels:
+    app: volunteer-consumer
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: volunteer-consumer
+  template:
+    metadata:
+      labels:
+        app: volunteer-consumer
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: volunteer-consumer
+          image: "<AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/solidarytech/volunteer-service:latest"
+          imagePullPolicy: Always
+          command: ["opentelemetry-instrument", "python", "consumer.py"]
+          env:
+            - name: AWS_REGION
+              value: "us-east-1"
+            - name: AWS_DYNAMODB_TABLE
+              value: "SolidaryTechVolunteers"
+            - name: AWS_SQS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: donation-service-secret
+                  key: AWS_SQS_URL
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector-opentelemetry-collector.monitoring.svc.cluster.local:4318"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "http/protobuf"
+            - name: OTEL_SERVICE_NAME
+              value: "volunteer-service-consumer"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.namespace=solidarytech,deployment.environment=production"
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 150m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}

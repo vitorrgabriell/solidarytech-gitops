@@ -1,0 +1,2 @@
+base/secrets/*.env
+!base/secrets/.env.example

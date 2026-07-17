@@ -1,0 +1,146 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-collector
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+    chart: opentelemetry-collector
+    targetRevision: 0.108.0
+    helm:
+      releaseName: otel-collector
+      values: |
+        mode: deployment
+
+        image:
+          repository: otel/opentelemetry-collector-contrib
+
+        command:
+          name: otelcol-contrib
+
+        replicaCount: 1
+
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            memory: 512Mi
+
+        extraEnvs:
+          - name: DD_API_KEY
+            valueFrom:
+              secretKeyRef:
+                name: datadog-api-key
+                key: api-key
+
+        ports:
+          otlp:
+            enabled: true
+            containerPort: 4317
+            servicePort: 4317
+            protocol: TCP
+          otlp-http:
+            enabled: true
+            containerPort: 4318
+            servicePort: 4318
+            protocol: TCP
+          metrics:
+            enabled: true
+            containerPort: 8888
+            servicePort: 8888
+            protocol: TCP
+          prometheus:
+            enabled: true
+            containerPort: 8889
+            servicePort: 8889
+            protocol: TCP
+
+        service:
+          enabled: true
+
+        serviceMonitor:
+          enabled: true
+          extraLabels:
+            release: kube-prometheus-stack
+          metricsEndpoints:
+            - port: prometheus
+              interval: 30s
+
+        config:
+          receivers:
+            otlp:
+              protocols:
+                grpc:
+                  endpoint: 0.0.0.0:4317
+                http:
+                  endpoint: 0.0.0.0:4318
+
+          processors:
+            batch:
+              timeout: 10s
+              send_batch_size: 1024
+            memory_limiter:
+              check_interval: 1s
+              limit_percentage: 80
+              spike_limit_percentage: 25
+            resource:
+              attributes:
+                - key: cluster
+                  value: solidarytech-eks
+                  action: upsert
+                - key: environment
+                  value: production
+                  action: upsert
+
+          exporters:
+            prometheus:
+              endpoint: 0.0.0.0:8889
+              namespace: solidarytech
+              send_timestamps: true
+
+            loki:
+              endpoint: http://loki.monitoring.svc.cluster.local:3100/loki/api/v1/push
+              default_labels_enabled:
+                exporter: false
+                job: true
+
+            datadog:
+              api:
+                site: datadoghq.com
+                key: ${env:DD_API_KEY}
+              hostname: solidarytech-eks
+
+            debug:
+              verbosity: basic
+
+          service:
+            telemetry:
+              logs:
+                level: info
+            pipelines:
+              traces:
+                receivers: [otlp]
+                processors: [memory_limiter, batch, resource]
+                exporters: [datadog, debug]
+              metrics:
+                receivers: [otlp]
+                processors: [memory_limiter, batch, resource]
+                exporters: [prometheus, datadog]
+              logs:
+                receivers: [otlp]
+                processors: [memory_limiter, batch, resource]
+                exporters: [loki, datadog]
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

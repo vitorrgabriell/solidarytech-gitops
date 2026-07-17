@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: volunteer-service
+  namespace: solidarytech
+  labels:
+    app: volunteer-service
+spec:
+  type: ClusterIP
+  selector:
+    app: volunteer-service
+  ports:
+    - name: http
+      port: 8083
+      targetPort: http

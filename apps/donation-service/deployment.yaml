@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: donation-service
+  namespace: solidarytech
+  labels:
+    app: donation-service
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: donation-service
+  template:
+    metadata:
+      labels:
+        app: donation-service
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: donation-service
+          image: "<AWS_ACCOUNT_ID>.dkr.ecr.us-east-1.amazonaws.com/solidarytech/donation-service:latest"
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8082
+          envFrom:
+            - secretRef:
+                name: donation-service-secret
+          env:
+            - name: PORT
+              value: "8082"
+            - name: AWS_REGION
+              value: "us-east-1"
+            - name: NGO_SERVICE_URL
+              value: "http://ngo-service:8081"
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: "http://otel-collector-opentelemetry-collector.monitoring.svc.cluster.local:4318"
+            - name: OTEL_EXPORTER_OTLP_PROTOCOL
+              value: "http/protobuf"
+            - name: OTEL_SERVICE_NAME
+              value: "donation-service"
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: "service.namespace=solidarytech,deployment.environment=production"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 300m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
