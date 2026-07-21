@@ -1,0 +1,412 @@
+# Dashboard SRE do donation-service: conformidade dos SLOs, error budget e
+# burn rate. Carregado pelo sidecar de dashboards do Grafana (label
+# grafana_dashboard: "1"). As queries usam as recording rules definidas em
+# donation-slo-rules.yaml; os stats de conformidade usam $__range, então a
+# "janela de avaliação" dos painéis de topo é o time range do dashboard
+# (retenção do Prometheus no lab: 3d).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: donation-slo-dashboard
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  donation-slo-dashboard.json: |
+    {
+      "uid": "donation-slo",
+      "title": "SRE — donation-service SLOs",
+      "tags": ["sre", "slo", "donation-service"],
+      "timezone": "browser",
+      "schemaVersion": 39,
+      "refresh": "30s",
+      "time": { "from": "now-24h", "to": "now" },
+      "templating": {
+        "list": [
+          {
+            "name": "datasource",
+            "label": "Datasource",
+            "type": "datasource",
+            "query": "prometheus",
+            "current": { "text": "Prometheus", "value": "prometheus" }
+          }
+        ]
+      },
+      "panels": [
+        {
+          "type": "row",
+          "title": "SLO — conformidade e error budget (na janela do dashboard)",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+          "id": 100
+        },
+        {
+          "type": "stat",
+          "id": 1,
+          "title": "Conformidade SLO Latência (< 300ms) — alvo 99.9%",
+          "description": "Fração das requisições a POST/GET /donations concluídas em menos de 300ms na janela do dashboard.",
+          "gridPos": { "h": 6, "w": 6, "x": 0, "y": 1 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            {
+              "refId": "A",
+              "instant": true,
+              "range": false,
+              "expr": "100 * sum(increase(solidarytech_http_server_duration_milliseconds_bucket{job=\"solidarytech/donation-service\", http_route=\"/donations\", le=\"300\"}[$__range])) / sum(increase(solidarytech_http_server_duration_milliseconds_count{job=\"solidarytech/donation-service\", http_route=\"/donations\"}[$__range]))"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "decimals": 3,
+              "min": 99,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "orange", "value": 99.5 },
+                  { "color": "green", "value": 99.9 }
+                ]
+              }
+            }
+          },
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "value_and_name",
+            "reduceOptions": { "calcs": ["lastNotNull"] }
+          }
+        },
+        {
+          "type": "stat",
+          "id": 2,
+          "title": "Conformidade SLO Disponibilidade (não-5xx) — alvo 99.9%",
+          "description": "Fração das requisições a /donations respondidas sem erro 5xx na janela do dashboard.",
+          "gridPos": { "h": 6, "w": 6, "x": 6, "y": 1 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            {
+              "refId": "A",
+              "instant": true,
+              "range": false,
+              "expr": "100 * (1 - (sum(increase(solidarytech_http_server_duration_milliseconds_count{job=\"solidarytech/donation-service\", http_route=\"/donations\", http_status_code=~\"5..\"}[$__range])) or vector(0)) / sum(increase(solidarytech_http_server_duration_milliseconds_count{job=\"solidarytech/donation-service\", http_route=\"/donations\"}[$__range])))"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "decimals": 3,
+              "min": 99,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "orange", "value": 99.5 },
+                  { "color": "green", "value": 99.9 }
+                ]
+              }
+            }
+          },
+          "options": {
+            "colorMode": "value",
+            "graphMode": "none",
+            "textMode": "value_and_name",
+            "reduceOptions": { "calcs": ["lastNotNull"] }
+          }
+        },
+        {
+          "type": "gauge",
+          "id": 3,
+          "title": "Error budget restante — Latência",
+          "description": "100% = budget intacto; 0% = budget de 0.1% totalmente consumido na janela; negativo = SLO violado.",
+          "gridPos": { "h": 6, "w": 5, "x": 12, "y": 1 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            {
+              "refId": "A",
+              "instant": true,
+              "range": false,
+              "expr": "100 * (1 - (1 - sum(increase(solidarytech_http_server_duration_milliseconds_bucket{job=\"solidarytech/donation-service\", http_route=\"/donations\", le=\"300\"}[$__range])) / sum(increase(solidarytech_http_server_duration_milliseconds_count{job=\"solidarytech/donation-service\", http_route=\"/donations\"}[$__range]))) / 0.001)"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "decimals": 1,
+              "min": -100,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "orange", "value": 25 },
+                  { "color": "green", "value": 50 }
+                ]
+              }
+            }
+          },
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"] },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true
+          }
+        },
+        {
+          "type": "gauge",
+          "id": 4,
+          "title": "Error budget restante — Disponibilidade",
+          "description": "100% = budget intacto; 0% = budget de 0.1% totalmente consumido na janela; negativo = SLO violado.",
+          "gridPos": { "h": 6, "w": 5, "x": 17, "y": 1 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            {
+              "refId": "A",
+              "instant": true,
+              "range": false,
+              "expr": "100 * (1 - ((sum(increase(solidarytech_http_server_duration_milliseconds_count{job=\"solidarytech/donation-service\", http_route=\"/donations\", http_status_code=~\"5..\"}[$__range])) or vector(0)) / sum(increase(solidarytech_http_server_duration_milliseconds_count{job=\"solidarytech/donation-service\", http_route=\"/donations\"}[$__range]))) / 0.001)"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "decimals": 1,
+              "min": -100,
+              "max": 100,
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "red", "value": null },
+                  { "color": "orange", "value": 25 },
+                  { "color": "green", "value": 50 }
+                ]
+              }
+            }
+          },
+          "options": {
+            "reduceOptions": { "calcs": ["lastNotNull"] },
+            "showThresholdLabels": false,
+            "showThresholdMarkers": true
+          }
+        },
+        {
+          "type": "stat",
+          "id": 5,
+          "title": "Tráfego /donations",
+          "gridPos": { "h": 6, "w": 2, "x": 22, "y": 1 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            { "refId": "A", "expr": "donation:requests:rate5m", "legendFormat": "req/s" }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "decimals": 2,
+              "thresholds": { "mode": "absolute", "steps": [ { "color": "text", "value": null } ] }
+            }
+          },
+          "options": {
+            "colorMode": "none",
+            "graphMode": "area",
+            "reduceOptions": { "calcs": ["lastNotNull"] }
+          }
+        },
+        {
+          "type": "row",
+          "title": "Burn rate do error budget (SLO 99.9% / 30d — burn 1x esgota o budget em 30d)",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 7 },
+          "id": 101
+        },
+        {
+          "type": "timeseries",
+          "id": 6,
+          "title": "Burn rate — Disponibilidade (linhas de alerta: 14.4 page / 6 page / 3 ticket)",
+          "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            { "refId": "A", "expr": "donation:slo_availability:burn_rate5m", "legendFormat": "janela 5m" },
+            { "refId": "B", "expr": "donation:slo_availability:burn_rate1h", "legendFormat": "janela 1h" },
+            { "refId": "C", "expr": "donation:slo_availability:burn_rate6h", "legendFormat": "janela 6h" }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "min": 0,
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "showPoints": "never",
+                "thresholdsStyle": { "mode": "line" }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "transparent", "value": null },
+                  { "color": "orange", "value": 3 },
+                  { "color": "red", "value": 6 },
+                  { "color": "dark-red", "value": 14.4 }
+                ]
+              }
+            }
+          },
+          "options": {
+            "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          }
+        },
+        {
+          "type": "timeseries",
+          "id": 7,
+          "title": "Burn rate — Latência (linhas de alerta: 14.4 page / 6 page / 3 ticket)",
+          "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            { "refId": "A", "expr": "donation:slo_latency:burn_rate5m", "legendFormat": "janela 5m" },
+            { "refId": "B", "expr": "donation:slo_latency:burn_rate1h", "legendFormat": "janela 1h" },
+            { "refId": "C", "expr": "donation:slo_latency:burn_rate6h", "legendFormat": "janela 6h" }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "none",
+              "min": 0,
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "showPoints": "never",
+                "thresholdsStyle": { "mode": "line" }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "transparent", "value": null },
+                  { "color": "orange", "value": 3 },
+                  { "color": "red", "value": 6 },
+                  { "color": "dark-red", "value": 14.4 }
+                ]
+              }
+            }
+          },
+          "options": {
+            "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          }
+        },
+        {
+          "type": "row",
+          "title": "Golden metrics — detalhe",
+          "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
+          "id": 102
+        },
+        {
+          "type": "timeseries",
+          "id": 8,
+          "title": "Latência p99 vs threshold do SLO (300ms)",
+          "gridPos": { "h": 8, "w": 8, "x": 0, "y": 17 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            { "refId": "A", "expr": "donation:latency_p99:5m", "legendFormat": "p99 (5m)" },
+            {
+              "refId": "B",
+              "expr": "histogram_quantile(0.50, sum by (le) (rate(solidarytech_http_server_duration_milliseconds_bucket{job=\"solidarytech/donation-service\", http_route=\"/donations\"}[5m])))",
+              "legendFormat": "p50 (5m)"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "ms",
+              "min": 0,
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 0,
+                "showPoints": "never",
+                "thresholdsStyle": { "mode": "line" }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "transparent", "value": null },
+                  { "color": "red", "value": 300 }
+                ]
+              }
+            }
+          },
+          "options": {
+            "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          }
+        },
+        {
+          "type": "timeseries",
+          "id": 9,
+          "title": "Taxa de erro 5xx (%) vs budget (0.1%)",
+          "gridPos": { "h": 8, "w": 8, "x": 8, "y": 17 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "100 * (1 - donation:sli_availability:ratio_rate5m)",
+              "legendFormat": "erro 5xx % (5m)"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "percent",
+              "min": 0,
+              "decimals": 3,
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "thresholdsStyle": { "mode": "line" }
+              },
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  { "color": "transparent", "value": null },
+                  { "color": "red", "value": 0.1 }
+                ]
+              }
+            }
+          },
+          "options": {
+            "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          }
+        },
+        {
+          "type": "timeseries",
+          "id": 10,
+          "title": "Tráfego por status HTTP (req/s)",
+          "gridPos": { "h": 8, "w": 8, "x": 16, "y": 17 },
+          "datasource": { "type": "prometheus", "uid": "${datasource}" },
+          "targets": [
+            {
+              "refId": "A",
+              "expr": "sum by (http_status_code) (rate(solidarytech_http_server_duration_milliseconds_count{job=\"solidarytech/donation-service\", http_route=\"/donations\"}[5m]))",
+              "legendFormat": "HTTP {{http_status_code}}"
+            }
+          ],
+          "fieldConfig": {
+            "defaults": {
+              "unit": "reqps",
+              "min": 0,
+              "custom": {
+                "drawStyle": "line",
+                "lineWidth": 2,
+                "fillOpacity": 10,
+                "showPoints": "never",
+                "stacking": { "mode": "none" }
+              }
+            }
+          },
+          "options": {
+            "legend": { "displayMode": "list", "placement": "bottom", "showLegend": true },
+            "tooltip": { "mode": "multi", "sort": "desc" }
+          }
+        }
+      ]
+    }

@@ -45,8 +45,14 @@ spec:
               value: "http/protobuf"
             - name: OTEL_SERVICE_NAME
               value: "donation-service"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            # service.instance.id único por pod: sem ele as réplicas exportam a
+            # mesma série cumulativa no Collector e os counters ficam serrilhados
             - name: OTEL_RESOURCE_ATTRIBUTES
-              value: "service.namespace=solidarytech,deployment.environment=production"
+              value: "service.namespace=solidarytech,deployment.environment=production,service.instance.id=$(POD_NAME)"
           resources:
             requests:
               cpu: 100m

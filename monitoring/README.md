@@ -138,3 +138,26 @@ kubectl port-forward svc/kube-prometheus-stack-grafana -n monitoring 3000:80
 
 Datasources Prometheus e Loki já vêm configurados automaticamente (sidecar
 do Helm chart + `dashboards/loki-datasource.yaml`).
+
+## SLOs do donation-service
+
+O diretório `dashboards/` também é sincronizado pela Application
+`grafana-dashboards` e carrega os artefatos de SRE do hot path:
+
+- `donation-slo-rules.yaml` — `PrometheusRule` com as recording rules dos SLIs
+  (latência < 300ms e disponibilidade não-5xx, alvo 99.9%/30d), burn rates em
+  6 janelas e os alertas multi-window/multi-burn-rate (14.4x/6x = page,
+  3x = ticket).
+- `donation-slo-dashboard.yaml` — dashboard **"SRE — donation-service SLOs"**
+  (uid `donation-slo`): conformidade dos SLOs, error budget restante e burn
+  rate com os thresholds de alerta desenhados.
+
+Definições completas dos SLIs/SLOs (com racional das queries) no repo
+principal:
+[`hackathon-DCLT/docs/sre/slo-donation-service.md`](https://github.com/vitorrgabriell/hackathon-DCLT/blob/main/docs/sre/slo-donation-service.md).
+
+Pré-requisitos que já estão nos manifests, mas valem menção porque são fáceis
+de quebrar: o ServiceMonitor do Collector usa `honorLabels: true` (preserva o
+label `job="solidarytech/donation-service"` que as queries filtram) e o
+Deployment do donation-service injeta `service.instance.id` por pod (sem isso
+as 2 réplicas colidem na mesma série no exporter Prometheus do Collector).

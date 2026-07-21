@@ -70,6 +70,11 @@ spec:
           metricsEndpoints:
             - port: prometheus
               interval: 30s
+              # preserva os labels job/instance que o exporter prometheus gera a
+              # partir de service.namespace/service.name — sem isso o Prometheus
+              # os renomeia pra exported_job/exported_instance e as queries de
+              # SLO (job="solidarytech/donation-service") não casam
+              honorLabels: true
 
         config:
           receivers:

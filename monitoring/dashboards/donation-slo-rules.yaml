@@ -1,0 +1,242 @@
+# SLIs/SLOs do donation-service (hot path).
+#
+# Métrica base: solidarytech_http_server_duration_milliseconds_* — histograma
+# http.server.duration emitido pelo otelhttp, exportado via OTLP -> Collector
+# -> exporter prometheus (namespace "solidarytech") -> scrape do Prometheus.
+# O bucket le="300" existe porque o app redefine as fronteiras via View no SDK
+# (ver donation-service/otel.go) pra alinhar com o threshold do SLO.
+#
+# SLOs (janela rolante de 30d, error budget 0.1% = 43m12s):
+#   - Latência:       99.9% das requisições a /donations em < 300ms
+#   - Disponibilidade: 99.9% das requisições a /donations sem 5xx
+#
+# Alertas seguem o padrão multi-window/multi-burn-rate do Google SRE Workbook:
+# janela longa detecta o burn sustentado, janela curta garante que ainda está
+# acontecendo (evita alertar em incidente já resolvido).
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: donation-service-slo
+  namespace: monitoring
+  labels:
+    release: kube-prometheus-stack
+spec:
+  groups:
+    - name: donation-service.sli
+      interval: 30s
+      rules:
+        - record: donation:requests:rate5m
+          expr: |
+            sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations"}[5m]))
+
+        # SLI de disponibilidade: fração de requisições sem 5xx
+        - record: donation:sli_availability:ratio_rate5m
+          expr: |
+            1 - (
+              (sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations", http_status_code=~"5.."}[5m])) or vector(0))
+              /
+              sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations"}[5m]))
+            )
+
+        # SLI de latência: fração de requisições concluídas em < 300ms
+        - record: donation:sli_latency:ratio_rate5m
+          expr: |
+            sum(rate(solidarytech_http_server_duration_milliseconds_bucket{job="solidarytech/donation-service", http_route="/donations", le="300"}[5m]))
+            /
+            sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations"}[5m]))
+
+        # p99 de latência (Golden Metric, usada no dashboard)
+        - record: donation:latency_p99:5m
+          expr: |
+            histogram_quantile(0.99, sum by (le) (rate(solidarytech_http_server_duration_milliseconds_bucket{job="solidarytech/donation-service", http_route="/donations"}[5m])))
+
+    # Burn rate = (1 - SLI na janela) / (1 - SLO alvo). Com SLO 99.9%,
+    # burn rate 1 = consumir exatamente o budget em 30d; 14.4 = esgotar em ~2d.
+    - name: donation-service.burnrate
+      interval: 30s
+      rules:
+        - record: donation:slo_availability:burn_rate5m
+          expr: |
+            (
+              (sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations", http_status_code=~"5.."}[5m])) or vector(0))
+              /
+              sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations"}[5m]))
+            ) / 0.001
+        - record: donation:slo_availability:burn_rate30m
+          expr: |
+            (
+              (sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations", http_status_code=~"5.."}[30m])) or vector(0))
+              /
+              sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations"}[30m]))
+            ) / 0.001
+        - record: donation:slo_availability:burn_rate1h
+          expr: |
+            (
+              (sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations", http_status_code=~"5.."}[1h])) or vector(0))
+              /
+              sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations"}[1h]))
+            ) / 0.001
+        - record: donation:slo_availability:burn_rate2h
+          expr: |
+            (
+              (sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations", http_status_code=~"5.."}[2h])) or vector(0))
+              /
+              sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations"}[2h]))
+            ) / 0.001
+        - record: donation:slo_availability:burn_rate6h
+          expr: |
+            (
+              (sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations", http_status_code=~"5.."}[6h])) or vector(0))
+              /
+              sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations"}[6h]))
+            ) / 0.001
+        - record: donation:slo_availability:burn_rate1d
+          expr: |
+            (
+              (sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations", http_status_code=~"5.."}[1d])) or vector(0))
+              /
+              sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations"}[1d]))
+            ) / 0.001
+
+        - record: donation:slo_latency:burn_rate5m
+          expr: |
+            (
+              1 - sum(rate(solidarytech_http_server_duration_milliseconds_bucket{job="solidarytech/donation-service", http_route="/donations", le="300"}[5m]))
+                  /
+                  sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations"}[5m]))
+            ) / 0.001
+        - record: donation:slo_latency:burn_rate30m
+          expr: |
+            (
+              1 - sum(rate(solidarytech_http_server_duration_milliseconds_bucket{job="solidarytech/donation-service", http_route="/donations", le="300"}[30m]))
+                  /
+                  sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations"}[30m]))
+            ) / 0.001
+        - record: donation:slo_latency:burn_rate1h
+          expr: |
+            (
+              1 - sum(rate(solidarytech_http_server_duration_milliseconds_bucket{job="solidarytech/donation-service", http_route="/donations", le="300"}[1h]))
+                  /
+                  sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations"}[1h]))
+            ) / 0.001
+        - record: donation:slo_latency:burn_rate2h
+          expr: |
+            (
+              1 - sum(rate(solidarytech_http_server_duration_milliseconds_bucket{job="solidarytech/donation-service", http_route="/donations", le="300"}[2h]))
+                  /
+                  sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations"}[2h]))
+            ) / 0.001
+        - record: donation:slo_latency:burn_rate6h
+          expr: |
+            (
+              1 - sum(rate(solidarytech_http_server_duration_milliseconds_bucket{job="solidarytech/donation-service", http_route="/donations", le="300"}[6h]))
+                  /
+                  sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations"}[6h]))
+            ) / 0.001
+        - record: donation:slo_latency:burn_rate1d
+          expr: |
+            (
+              1 - sum(rate(solidarytech_http_server_duration_milliseconds_bucket{job="solidarytech/donation-service", http_route="/donations", le="300"}[1d]))
+                  /
+                  sum(rate(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service", http_route="/donations"}[1d]))
+            ) / 0.001
+
+    - name: donation-service.slo-alerts
+      rules:
+        # ---- Disponibilidade ----
+        - alert: DonationAvailabilityBurnRateCritical
+          expr: |
+            donation:slo_availability:burn_rate1h > 14.4
+            and
+            donation:slo_availability:burn_rate5m > 14.4
+          for: 2m
+          labels:
+            severity: critical
+            service: donation-service
+            slo: availability
+          annotations:
+            summary: "donation-service queimando error budget de disponibilidade 14.4x (esgota em ~2 dias)"
+            description: "Mais de 1.44% das requisições a /donations retornando 5xx nas últimas 1h e ainda ocorrendo (janela 5m). Paging: investigar imediatamente."
+
+        - alert: DonationAvailabilityBurnRateHigh
+          expr: |
+            donation:slo_availability:burn_rate6h > 6
+            and
+            donation:slo_availability:burn_rate30m > 6
+          for: 15m
+          labels:
+            severity: critical
+            service: donation-service
+            slo: availability
+          annotations:
+            summary: "donation-service queimando error budget de disponibilidade 6x (esgota em ~5 dias)"
+            description: "Taxa de 5xx sustentada por 6h acima de 0.6%. Paging: degradação contínua do hot path."
+
+        - alert: DonationAvailabilityBurnRateWarning
+          expr: |
+            donation:slo_availability:burn_rate1d > 3
+            and
+            donation:slo_availability:burn_rate2h > 3
+          for: 1h
+          labels:
+            severity: warning
+            service: donation-service
+            slo: availability
+          annotations:
+            summary: "donation-service queimando error budget de disponibilidade 3x (esgota em ~10 dias)"
+            description: "Burn lento mas consistente. Abrir ticket e investigar no horário comercial."
+
+        # ---- Latência ----
+        - alert: DonationLatencyBurnRateCritical
+          expr: |
+            donation:slo_latency:burn_rate1h > 14.4
+            and
+            donation:slo_latency:burn_rate5m > 14.4
+          for: 2m
+          labels:
+            severity: critical
+            service: donation-service
+            slo: latency
+          annotations:
+            summary: "donation-service queimando error budget de latência 14.4x (esgota em ~2 dias)"
+            description: "Mais de 1.44% das requisições a /donations acima de 300ms na última 1h e ainda ocorrendo. Paging: hot path degradado."
+
+        - alert: DonationLatencyBurnRateHigh
+          expr: |
+            donation:slo_latency:burn_rate6h > 6
+            and
+            donation:slo_latency:burn_rate30m > 6
+          for: 15m
+          labels:
+            severity: critical
+            service: donation-service
+            slo: latency
+          annotations:
+            summary: "donation-service queimando error budget de latência 6x (esgota em ~5 dias)"
+            description: "Latência acima do threshold de 300ms sustentada por 6h."
+
+        - alert: DonationLatencyBurnRateWarning
+          expr: |
+            donation:slo_latency:burn_rate1d > 3
+            and
+            donation:slo_latency:burn_rate2h > 3
+          for: 1h
+          labels:
+            severity: warning
+            service: donation-service
+            slo: latency
+          annotations:
+            summary: "donation-service queimando error budget de latência 3x (esgota em ~10 dias)"
+            description: "Burn lento de latência. Abrir ticket e investigar no horário comercial."
+
+        # ---- Pipeline de telemetria ----
+        - alert: DonationServiceNoMetrics
+          expr: |
+            absent(solidarytech_http_server_duration_milliseconds_count{job="solidarytech/donation-service"})
+          for: 15m
+          labels:
+            severity: warning
+            service: donation-service
+          annotations:
+            summary: "Sem métricas do donation-service há 15m"
+            description: "O Prometheus não vê a série http.server.duration do donation-service. Ou o serviço está fora, ou o pipeline app -> OTel Collector -> Prometheus quebrou. Os SLOs ficam cegos enquanto isso durar."
