@@ -43,13 +43,17 @@ spec:
               value: "ngo-service"
             - name: OTEL_RESOURCE_ATTRIBUTES
               value: "service.namespace=solidarytech,deployment.environment=production"
+          # Rightsizing baseado em métricas do Prometheus (working set ~83Mi/pod,
+          # CPU ~1-2m/pod sob tráfego leve). Memória com folga sobre o observado
+          # (Python/gunicorn cresce com workers); CPU request reduzido a 50m
+          # preservando headroom (não cortado ao idle medido).
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
+              cpu: 50m
+              memory: 96Mi
             limits:
               cpu: 250m
-              memory: 256Mi
+              memory: 160Mi
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

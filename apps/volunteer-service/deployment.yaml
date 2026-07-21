@@ -44,13 +44,18 @@ spec:
               value: "volunteer-service"
             - name: OTEL_RESOURCE_ATTRIBUTES
               value: "service.namespace=solidarytech,deployment.environment=production"
+          # Rightsizing baseado em métricas do Prometheus. Working set observado
+          # ~128Mi/pod (pico 128.6Mi) — o request de 128Mi estava COLADO no uso,
+          # então foi ELEVADO a 144Mi pra dar headroom real e proteger contra
+          # eviction sob pressão de memória do node; limit ajustado a 224Mi.
+          # CPU request reduzido a 50m preservando headroom (não ao idle medido).
           resources:
             requests:
-              cpu: 100m
-              memory: 128Mi
+              cpu: 50m
+              memory: 144Mi
             limits:
               cpu: 250m
-              memory: 256Mi
+              memory: 224Mi
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

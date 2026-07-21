@@ -53,13 +53,18 @@ spec:
             # mesma série cumulativa no Collector e os counters ficam serrilhados
             - name: OTEL_RESOURCE_ATTRIBUTES
               value: "service.namespace=solidarytech,deployment.environment=production,service.instance.id=$(POD_NAME)"
+          # Rightsizing baseado em métricas do Prometheus (working set ~11Mi/pod,
+          # CPU <1m/pod sob tráfego leve). Memória cortada com folga (req 3x,
+          # limit 6x o observado); CPU request reduzido a 50m (não ao idle
+          # medido, pra preservar headroom de burst/startup e estabilidade do
+          # HPA); limit de CPU mantido generoso (compressível, ~0 throttling).
           resources:
             requests:
-              cpu: 100m
-              memory: 64Mi
+              cpu: 50m
+              memory: 32Mi
             limits:
               cpu: 300m
-              memory: 128Mi
+              memory: 64Mi
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
