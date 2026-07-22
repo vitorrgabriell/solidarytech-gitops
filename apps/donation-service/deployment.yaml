@@ -24,7 +24,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: donation-service
-          image: "086038954498.dkr.ecr.us-east-1.amazonaws.com/solidarytech/donation-service:sha-4f5fbfb
+          image: "086038954498.dkr.ecr.us-east-1.amazonaws.com/solidarytech/donation-service:sha-4f5fbfb"
           imagePullPolicy: Always
           ports:
             - name: http
