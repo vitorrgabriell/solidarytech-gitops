@@ -24,7 +24,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: ngo-service
-          image: "086038954498.dkr.ecr.us-east-1.amazonaws.com/solidarytech/ngo-service:latest"
+          image: "086038954498.dkr.ecr.us-east-1.amazonaws.com/solidarytech/ngo-service:sha-f925351"
           imagePullPolicy: Always
           ports:
             - name: http
